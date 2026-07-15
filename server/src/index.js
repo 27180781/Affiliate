@@ -30,12 +30,6 @@ app.use(cookieParser());
 // Auth uses a Bearer header (not cookies), so credentials are never needed.
 const rootDomain = config.rootDomain;
 
-function strictOrigin(origin, cb) {
-  // No Origin header = server-to-server (curl, the webhook) → allow.
-  if (!origin || config.corsOrigins.includes(origin)) return cb(null, true);
-  return cb(new Error('Not allowed by CORS'));
-}
-
 function subdomainOrigin(origin, cb) {
   if (!origin) return cb(null, true);
   try {
@@ -48,7 +42,17 @@ function subdomainOrigin(origin, cb) {
   return cb(new Error('Not allowed by CORS'));
 }
 
-const appCors = cors({ origin: strictOrigin, methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'] });
+// App CORS: allow any explicitly-listed origin (CORS_ORIGINS, e.g. a custom
+// non-clicker domain) AND any clicker.co.il subdomain the dashboard may run on.
+// This is safe because auth is a Bearer header, not cookies — no credentials
+// ride along, so a subdomain can't act on a logged-in user's behalf.
+function appOrigin(origin, cb) {
+  // No Origin header = server-to-server (curl, the webhook) → allow.
+  if (!origin || config.corsOrigins.includes(origin)) return cb(null, true);
+  return subdomainOrigin(origin, cb);
+}
+
+const appCors = cors({ origin: appOrigin, methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'] });
 const clickCors = cors({ origin: subdomainOrigin, methods: ['POST', 'OPTIONS'] });
 // Public, cacheable endpoints (tracking script + config) — readable from anywhere.
 const publicCors = cors({ origin: subdomainOrigin, methods: ['GET', 'OPTIONS'] });
