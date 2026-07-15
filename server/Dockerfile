@@ -26,6 +26,7 @@ ENV TRACKING_DIR=/app/tracking
 
 EXPOSE 4000
 
-# Run migrations, then exec the API so it becomes PID 1 and receives SIGTERM
-# (enabling the graceful shutdown handler). If you seed, append `--seed`.
-CMD ["sh", "-c", "node src/migrate.js && exec node src/index.js"]
+# On boot: run migrations; if ADMIN_EMAIL is set, provision/update the admin
+# (non-fatal on failure); then exec the API so it becomes PID 1 and receives
+# SIGTERM (enabling the graceful shutdown handler).
+CMD ["sh", "-c", "node src/migrate.js && { [ -n \"$ADMIN_EMAIL\" ] && node src/create-admin.js || true; } && exec node src/index.js"]

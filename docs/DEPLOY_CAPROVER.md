@@ -40,13 +40,15 @@
    > אז וודאו שהדומיין הזה זמין וב-HTTPS.
 
 ה-`CMD` בקונטיינר מריץ `migrate` אוטומטית לפני ההפעלה, כך שהסכמה נוצרת בעליית האפליקציה
-(ללא seed וללא מנהל — fail-closed).
+(ללא seed — fail-closed).
 
-**יצירת חשבון מנהל** (חובה, אין ברירת מחדל): דרך *App* → *Deployment* → **Exec** בקונטיינר:
-```bash
-ADMIN_EMAIL=you@clicker.co.il ADMIN_PASSWORD='<סיסמה חזקה>' npm run create-admin
+**יצירת חשבון מנהל** — הדרך הקלה (בלי SSH): הוסיפו שני משתני סביבה לאפליקציית ה-API:
 ```
-לזריעת נתוני דמו (לא לפרודקשן) הריצו `node src/migrate.js --seed` דרך *Exec*.
+ADMIN_EMAIL=you@clicker.co.il
+ADMIN_PASSWORD=<סיסמה חזקה>
+```
+בכל עלייה של הקונטיינר המערכת תיצור/תעדכן את המנהל אוטומטית (idempotent). אם לא מוגדרים —
+פשוט מדלגים על היצירה. לחלופין אפשר להריץ ידנית `npm run create-admin` אם יש גישת Exec/SSH.
 
 ## 3. אפליקציית הדשבורד (`affiliate-web`)
 
