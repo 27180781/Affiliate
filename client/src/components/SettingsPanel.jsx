@@ -6,6 +6,7 @@ import { api } from '../api.js';
 export default function SettingsPanel({ settings, onSaved }) {
   const [pct, setPct] = useState(() => (Number(settings.defaultCommissionRate) * 100).toString());
   const [days, setDays] = useState(() => String(settings.cookieDays));
+  const [attribution, setAttribution] = useState(() => settings.attribution || 'last');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
@@ -23,6 +24,7 @@ export default function SettingsPanel({ settings, onSaved }) {
       const { settings: updated } = await api.adminUpdateSettings({
         default_commission_rate: rate,
         cookie_days: d,
+        attribution,
       });
       setMsg('ההגדרות נשמרו');
       onSaved?.(updated);
@@ -38,7 +40,7 @@ export default function SettingsPanel({ settings, onSaved }) {
       <h2 className="mb-3 text-lg font-semibold text-slate-900">הגדרות מערכת</h2>
       {err && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
       {msg && <div className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{msg}</div>}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">אחוז עמלה ברירת מחדל</label>
           <div className="relative">
@@ -61,6 +63,14 @@ export default function SettingsPanel({ settings, onSaved }) {
             onChange={(e) => setDays(e.target.value)}
           />
           <p className="mt-1 text-xs text-slate-400">משך תוקף ה-Cookie של ההפניה (בימים).</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">מודל ייחוס</label>
+          <select className="input" value={attribution} onChange={(e) => setAttribution(e.target.value)}>
+            <option value="last">קליק אחרון מנצח</option>
+            <option value="first">קליק ראשון מנצח</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-400">מי מזוכה כשעברו כמה שותפים.</p>
         </div>
         <div className="flex items-end">
           <button type="submit" className="btn-primary w-full" disabled={busy}>

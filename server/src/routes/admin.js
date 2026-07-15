@@ -165,6 +165,7 @@ adminRouter.put('/settings', async (req, res, next) => {
     const body = req.body ?? {};
     let rate;
     let days;
+    let attribution;
 
     if (body.default_commission_rate !== undefined) {
       rate = Number(body.default_commission_rate);
@@ -178,8 +179,14 @@ adminRouter.put('/settings', async (req, res, next) => {
         return res.status(400).json({ error: 'cookie_days must be an integer between 1 and 730' });
       }
     }
+    if (body.attribution !== undefined) {
+      attribution = String(body.attribution);
+      if (!['last', 'first'].includes(attribution)) {
+        return res.status(400).json({ error: "attribution must be 'last' or 'first'" });
+      }
+    }
 
-    const s = await updateSettings({ defaultCommissionRate: rate, cookieDays: days });
+    const s = await updateSettings({ defaultCommissionRate: rate, cookieDays: days, attribution });
     res.json({ settings: s });
   } catch (err) {
     next(err);

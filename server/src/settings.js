@@ -12,6 +12,7 @@ function normalize(row) {
   return {
     defaultCommissionRate: Number(row.default_commission_rate),
     cookieDays: Number(row.cookie_days),
+    attribution: row.attribution === 'first' ? 'first' : 'last',
     updatedAt: row.updated_at,
   };
 }
@@ -22,25 +23,26 @@ export async function getSettings({ fresh = false } = {}) {
   if (!fresh && cache && now < cacheExpires) return cache;
 
   const { rows } = await query(
-    'SELECT default_commission_rate, cookie_days, updated_at FROM settings WHERE id = 1'
+    'SELECT default_commission_rate, cookie_days, attribution, updated_at FROM settings WHERE id = 1'
   );
   cache = rows[0]
     ? normalize(rows[0])
-    : { defaultCommissionRate: config.commissionRate, cookieDays: 30, updatedAt: null };
+    : { defaultCommissionRate: config.commissionRate, cookieDays: 30, attribution: 'last', updatedAt: null };
   cacheExpires = now + TTL_MS;
   return cache;
 }
 
 /** Update settings (only provided fields change). Returns the new settings. */
-export async function updateSettings({ defaultCommissionRate, cookieDays }) {
+export async function updateSettings({ defaultCommissionRate, cookieDays, attribution }) {
   const { rows } = await query(
     `UPDATE settings
         SET default_commission_rate = COALESCE($1, default_commission_rate),
             cookie_days             = COALESCE($2, cookie_days),
+            attribution             = COALESCE($3, attribution),
             updated_at              = now()
       WHERE id = 1
-      RETURNING default_commission_rate, cookie_days, updated_at`,
-    [defaultCommissionRate ?? null, cookieDays ?? null]
+      RETURNING default_commission_rate, cookie_days, attribution, updated_at`,
+    [defaultCommissionRate ?? null, cookieDays ?? null, attribution ?? null]
   );
   cache = normalize(rows[0]);
   cacheExpires = Date.now() + TTL_MS;

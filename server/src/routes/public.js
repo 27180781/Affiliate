@@ -36,6 +36,7 @@ publicRouter.get('/api/config', async (_req, res, next) => {
       cookieName: 'clicker_affiliate',
       rootDomain: config.rootDomain,
       cookieDays: s.cookieDays,
+      attribution: s.attribution,
     });
   } catch (err) {
     next(err);
@@ -57,6 +58,7 @@ publicRouter.get('/clicker-affiliate.js', async (req, res, next) => {
       `;(function(){var c=(window.CLICKER_AFFILIATE=window.CLICKER_AFFILIATE||{});` +
       `if(c.days==null)c.days=${Number(s.cookieDays)};` +
       `if(c.rootDomain==null)c.rootDomain=${JSON.stringify(config.rootDomain)};` +
+      `if(c.attribution==null)c.attribution=${JSON.stringify(s.attribution)};` +
       `if(c.apiBase==null)c.apiBase=${JSON.stringify(apiBase)};})();\n`;
     res.type('application/javascript');
     res.set('Cache-Control', 'public, max-age=300');

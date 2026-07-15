@@ -53,11 +53,19 @@ CREATE TABLE IF NOT EXISTS settings (
                                           CHECK (default_commission_rate >= 0 AND default_commission_rate <= 1),
     -- How long the clicker_affiliate cookie lives, in days.
     cookie_days             INT           NOT NULL DEFAULT 30 CHECK (cookie_days >= 1 AND cookie_days <= 730),
+    -- Attribution model: 'last' = most recent referral wins (overwrite);
+    --                    'first' = earliest referral is kept.
+    attribution             TEXT          NOT NULL DEFAULT 'last' CHECK (attribution IN ('last', 'first')),
     updated_at              TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 -- Ensure the single settings row always exists.
 INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Additive migration for pre-existing settings tables.
+ALTER TABLE settings
+    ADD COLUMN IF NOT EXISTS attribution TEXT NOT NULL DEFAULT 'last'
+    CHECK (attribution IN ('last', 'first'));
 
 -- ---------------------------------------------------------------------------
 --  conversions
