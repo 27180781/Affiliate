@@ -1,0 +1,62 @@
+# Local development stack: Postgres + API + web dashboard.
+#   docker compose up --build
+# Then open http://localhost:8080 (dashboard) — the API is proxied at /api.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: affiliate
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d affiliate']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: affiliate
+      JWT_SECRET: dev-jwt-secret-change-me
+      WEBHOOK_SECRET: dev-webhook-secret
+      COMMISSION_RATE: '0.20'
+      ROOT_DOMAIN: clicker.co.il
+      # Local-dev admin, provisioned via create-admin (NOT baked into SQL seed).
+      # These values live only in this dev compose file and never reach prod
+      # (the CapRover Dockerfile runs migrate WITHOUT seeding/admin creation).
+      ADMIN_EMAIL: admin@clicker.co.il
+      ADMIN_PASSWORD: admin1234
+    # Migrate + seed demo affiliate + create the dev admin, then start the API.
+    command: sh -c "node src/migrate.js --seed && node src/create-admin.js && node src/index.js"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '4000:4000'
+
+  web:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    environment:
+      API_UPSTREAM: api:4000
+    depends_on:
+      - api
+    ports:
+      - '8080:80'
+
+volumes:
+  pgdata:
