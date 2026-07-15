@@ -43,15 +43,21 @@ publicRouter.get('/api/config', async (_req, res, next) => {
 });
 
 // GET /clicker-affiliate.js
-publicRouter.get('/clicker-affiliate.js', async (_req, res, next) => {
+publicRouter.get('/clicker-affiliate.js', async (req, res, next) => {
   try {
     const s = await getSettings();
+    // The click beacon should target the host the script was actually served
+    // from (works whether that's the API's own domain or the dashboard host
+    // that proxies /api). Prefer an explicit PUBLIC_API_BASE, else derive it.
+    const apiBase =
+      config.publicApiBase || `${req.protocol}://${req.get('host')}`;
     // Prepend admin-controlled defaults (a site's own window.CLICKER_AFFILIATE
     // override, set before this script, still wins because we only fill blanks).
     const preamble =
       `;(function(){var c=(window.CLICKER_AFFILIATE=window.CLICKER_AFFILIATE||{});` +
       `if(c.days==null)c.days=${Number(s.cookieDays)};` +
-      `if(c.rootDomain==null)c.rootDomain=${JSON.stringify(config.rootDomain)};})();\n`;
+      `if(c.rootDomain==null)c.rootDomain=${JSON.stringify(config.rootDomain)};` +
+      `if(c.apiBase==null)c.apiBase=${JSON.stringify(apiBase)};})();\n`;
     res.type('application/javascript');
     res.set('Cache-Control', 'public, max-age=300');
     res.send(preamble + loadTemplate());

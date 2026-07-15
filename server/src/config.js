@@ -62,5 +62,9 @@ export const config = {
   // Root domain used to build referral links shown in the dashboard.
   rootDomain: process.env.ROOT_DOMAIN ?? 'clicker.co.il',
 
+  // Optional explicit public base URL for the click beacon in the tracking
+  // script. If unset, it is derived from the request host at serve time.
+  publicApiBase: process.env.PUBLIC_API_BASE || '',
+
   corsOrigins,
 };
