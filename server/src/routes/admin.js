@@ -9,6 +9,15 @@ export const adminRouter = Router();
 
 adminRouter.use(requireAuth, requireAdmin);
 
+// Strictly parse a commission rate (0..1). Rejects booleans, arrays, empty
+// strings, null — anything that Number() would silently coerce to a valid
+// number. Returns NaN for invalid input.
+function parseRate(raw) {
+  if (typeof raw === 'number') return raw;
+  if (typeof raw === 'string' && raw.trim() !== '') return Number(raw);
+  return NaN;
+}
+
 // GET /api/admin/affiliates → every affiliate with live balances + rate + clicks
 adminRouter.get('/affiliates', async (_req, res, next) => {
   try {
@@ -80,7 +89,13 @@ adminRouter.post('/conversions/:id/pay', async (req, res, next) => {
   try {
     const { id } = req.params;
     const updated = await withTransaction(async (client) => {
-      // Lock the row so concurrent pay clicks can't double-decrement.
+      // Lock the AFFILIATE row first (consistent lock order with pay-all, which
+      // locks affiliate → conversions), otherwise the two paths can deadlock.
+      const owner = await client.query('SELECT affiliate_id FROM conversions WHERE id = $1', [id]);
+      if (!owner.rows[0]) return { notFound: true };
+      await client.query('SELECT 1 FROM affiliates WHERE id = $1 FOR UPDATE', [owner.rows[0].affiliate_id]);
+
+      // Then lock the conversion row so concurrent pay clicks can't double-decrement.
       const { rows } = await client.query(
         'SELECT id, affiliate_id, commission_amount, status FROM conversions WHERE id = $1 FOR UPDATE',
         [id]
@@ -168,9 +183,9 @@ adminRouter.put('/settings', async (req, res, next) => {
     let attribution;
 
     if (body.default_commission_rate !== undefined) {
-      rate = Number(body.default_commission_rate);
+      rate = parseRate(body.default_commission_rate);
       if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
-        return res.status(400).json({ error: 'default_commission_rate must be between 0 and 1' });
+        return res.status(400).json({ error: 'default_commission_rate must be a number between 0 and 1' });
       }
     }
     if (body.cookie_days !== undefined) {
@@ -211,9 +226,9 @@ adminRouter.patch('/affiliates/:id', async (req, res, next) => {
         params.push(null);
         sets.push(`commission_rate = $${params.length}`); // null → use global default
       } else {
-        const rate = Number(raw);
+        const rate = parseRate(raw);
         if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
-          return res.status(400).json({ error: 'commission_rate must be between 0 and 1, or null' });
+          return res.status(400).json({ error: 'commission_rate must be a number between 0 and 1, or null' });
         }
         params.push(rate);
         sets.push(`commission_rate = $${params.length}`);

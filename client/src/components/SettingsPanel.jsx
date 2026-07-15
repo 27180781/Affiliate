@@ -4,7 +4,9 @@ import { api } from '../api.js';
 // Admin settings: default commission % (applies when an affiliate has no
 // per-affiliate override) and cookie retention days.
 export default function SettingsPanel({ settings, onSaved }) {
-  const [pct, setPct] = useState(() => (Number(settings.defaultCommissionRate) * 100).toString());
+  const [pct, setPct] = useState(() =>
+    String(Number((Number(settings.defaultCommissionRate) * 100).toFixed(2)))
+  );
   const [days, setDays] = useState(() => String(settings.cookieDays));
   const [attribution, setAttribution] = useState(() => settings.attribution || 'last');
   const [busy, setBusy] = useState(false);

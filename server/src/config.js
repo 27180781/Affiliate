@@ -10,6 +10,22 @@ function required(name, fallback) {
   return value;
 }
 
+// Parse TRUST_PROXY into a value Express understands:
+//   unset            → trust loopback + private/overlay ranges (recommended)
+//   an integer       → that many proxy hops
+//   'true' / 'false' → boolean
+//   anything else    → passed through as a custom subnet/preset list
+function parseTrustProxy(raw) {
+  if (raw === undefined || raw === null || raw.trim() === '') {
+    return 'loopback, linklocal, uniquelocal';
+  }
+  const v = raw.trim();
+  if (/^\d+$/.test(v)) return parseInt(v, 10);
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return v;
+}
+
 // Comma-separated list of allowed CORS origins. Supports exact origins and
 // a wildcard for any clicker.co.il subdomain (handled in index.js).
 const corsOrigins = (process.env.CORS_ORIGINS ??
@@ -39,6 +55,11 @@ export const config = {
   },
   // Enable TLS to the DB (managed Postgres). Set PGSSL=true to turn on.
   pgSsl: String(process.env.PGSSL ?? 'false').toLowerCase() === 'true',
+  // Optional CA (PEM contents) to verify the DB certificate against.
+  pgSslCa: process.env.PGSSL_CA || undefined,
+  // Explicit, loud opt-out of certificate verification (NOT recommended — only
+  // for providers with self-signed certs and no CA available).
+  pgSslNoVerify: String(process.env.PGSSL_NO_VERIFY ?? 'false').toLowerCase() === 'true',
 
   // Auth. Fail closed unless an explicit dev opt-in is set.
   jwtSecret: required('JWT_SECRET', allowInsecureDevSecrets ? 'dev-insecure-secret-change-me' : undefined),
@@ -55,9 +76,14 @@ export const config = {
   // never reuse the JWT secret). Falls back to a static salt if unset.
   ipHashSalt: process.env.IP_HASH_SALT ?? process.env.JWT_SECRET ?? 'clicker-ip-hash-salt',
 
-  // Number of reverse proxies in front of the API (Express `trust proxy`).
-  // Local/compose: 1. CapRover edge + client nginx /api proxy: 2.
-  trustProxy: parseInt(process.env.TRUST_PROXY ?? '1', 10),
+  // Express `trust proxy`. Default: trust loopback + private/overlay ranges, so
+  // req.ip is the first PUBLIC address in X-Forwarded-For regardless of how many
+  // (private) proxy hops front the API. This is correct for both the 1-hop
+  // (edge → API) and 2-hop (edge → dashboard nginx → API) paths, and — because
+  // the real client IP is appended to the RIGHT of any client-forged XFF value —
+  // it cannot be spoofed. Override with an integer hop count or a custom subnet
+  // list via TRUST_PROXY only if you know your exact topology.
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 
   // Root domain used to build referral links shown in the dashboard.
   rootDomain: process.env.ROOT_DOMAIN ?? 'clicker.co.il',

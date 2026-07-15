@@ -35,8 +35,9 @@ services:
       COMMISSION_RATE: '0.20'
       ROOT_DOMAIN: clicker.co.il
       # Local-dev admin, provisioned via create-admin (NOT baked into SQL seed).
-      # These values live only in this dev compose file and never reach prod
-      # (the CapRover Dockerfile runs migrate WITHOUT seeding/admin creation).
+      # NOTE: the CapRover Dockerfile ALSO auto-creates an admin on boot when
+      # ADMIN_EMAIL/ADMIN_PASSWORD are set (create-if-absent; set
+      # ADMIN_FORCE_RESET=true to reset an existing password).
       ADMIN_EMAIL: admin@clicker.co.il
       ADMIN_PASSWORD: admin1234
     # Migrate + seed demo affiliate + create the dev admin, then exec the API

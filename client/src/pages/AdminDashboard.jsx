@@ -14,6 +14,7 @@ export default function AdminDashboard() {
   const [settings, setSettings] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false); // did an initial load ever succeed?
   const [error, setError] = useState('');
   const [payingId, setPayingId] = useState(null);
   // Monotonic request id: ignore responses from superseded loads (e.g. rapid
@@ -33,6 +34,7 @@ export default function AdminDashboard() {
       setAffiliates(affRes.affiliates);
       setConversions(convRes.conversions);
       setSettings(setRes.settings);
+      setLoaded(true);
     } catch (err) {
       if (myReq !== reqIdRef.current) return;
       setError(err.message || 'שגיאה בטעינת נתוני הניהול');
@@ -82,7 +84,7 @@ export default function AdminDashboard() {
 
       {loading ? (
         <div className="card text-center text-sm text-slate-500">טוען…</div>
-      ) : error ? null : (
+      ) : !loaded ? null : (
         <div className="space-y-8">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
             <KpiCard label="שותפים פעילים" value={affiliates.length} accent="brand" />

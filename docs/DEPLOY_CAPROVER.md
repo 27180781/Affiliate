@@ -27,10 +27,12 @@
    WEBHOOK_SECRET=<openssl rand -hex 32>
    COMMISSION_RATE=0.20
    ROOT_DOMAIN=clicker.co.il
-   CORS_ORIGINS=https://affiliate.clicker.co.il
-   # Edge nginx + the dashboard's client nginx /api proxy = 2 proxy hops.
-   TRUST_PROXY=2
+   ADMIN_EMAIL=you@clicker.co.il
+   ADMIN_PASSWORD=<בחרו סיסמה חזקה>
    ```
+   > אין צורך להגדיר `TRUST_PROXY` — ברירת המחדל מזהה נכון את כתובת הלקוח האמיתית
+   > גם דרך edge בלבד וגם דרך ה-proxy של הדשבורד, וללא אפשרות זיוף.
+   > `CORS_ORIGINS` אופציונלי — כל תת-דומיין של `clicker.co.il` מאושר אוטומטית.
 3. *App Configs* → **Container HTTP Port** = `4000`.
 4. **Deploy** → לשונית *Deployment*:
    - שיטת git/GitHub או `caprover deploy` מהמחשב.

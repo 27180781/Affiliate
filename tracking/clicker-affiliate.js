@@ -87,10 +87,12 @@
       // Use an image pixel (a plain GET). Image loads are exempt from CORS and
       // never trigger a preflight, so cross-subdomain click tracking is reliable
       // (unlike a cross-origin JSON POST / sendBeacon, which needs a preflight).
+      // Cap URL/referrer so the pixel URL can't exceed proxy URI limits.
+      var cap = function (s) { return String(s || '').slice(0, 512); };
       var qs =
         'ref=' + encodeURIComponent(ref) +
-        '&u=' + encodeURIComponent(window.location.href) +
-        '&r=' + encodeURIComponent(document.referrer || '') +
+        '&u=' + encodeURIComponent(cap(window.location.href)) +
+        '&r=' + encodeURIComponent(cap(document.referrer)) +
         '&t=' + Date.now(); // cache-buster
       var img = new Image();
       img.src = base + '/api/track-click?' + qs;
@@ -101,12 +103,16 @@
     var ref = sanitizeRef(getParam(cfg.param));
     if (!ref) return; // no referral in the URL → nothing to do
 
+    // A click on a referral link is always a real click — record it regardless
+    // of the attribution model (clicks measure traffic; the cookie decides the
+    // sale). Only the COOKIE write is gated by first- vs last-click.
+    sendClickBeacon(ref);
+
     var existing = readCookie(cfg.cookieName);
     // First-click attribution keeps the earliest ref; last-click overwrites.
     if (cfg.attribution === 'first' && existing) return;
 
     writeCookie(cfg.cookieName, ref);
-    sendClickBeacon(ref);
   } catch (e) {
     // Tracking must never throw into the host page.
     if (window.console && console.warn) console.warn('[clicker-affiliate]', e);

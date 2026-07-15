@@ -54,8 +54,10 @@ function appOrigin(origin, cb) {
 
 const appCors = cors({ origin: appOrigin, methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'] });
 const clickCors = cors({ origin: subdomainOrigin, methods: ['GET', 'POST', 'OPTIONS'] });
-// Public, cacheable endpoints (tracking script + config) — readable from anywhere.
-const publicCors = cors({ origin: subdomainOrigin, methods: ['GET', 'OPTIONS'] });
+// Public, cacheable endpoints (tracking script + config) — non-sensitive and
+// readable from anywhere. Safe: scoped (below) to only /api/config and
+// /clicker-affiliate.js, which expose no secrets and require no credentials.
+const publicCors = cors({ origin: true, methods: ['GET', 'OPTIONS'] });
 
 // --- Rate limiting ---------------------------------------------------------
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 50, standardHeaders: true, legacyHeaders: false });

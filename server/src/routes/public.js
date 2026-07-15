@@ -25,6 +25,22 @@ function loadTemplate() {
   return templateCache;
 }
 
+// Derive the beacon base URL from the request Host, but ONLY trust it when it is
+// within ROOT_DOMAIN (defeats Host-header cache poisoning). Otherwise return a
+// safe, fixed default under ROOT_DOMAIN.
+function safeApiBase(req) {
+  const root = config.rootDomain;
+  const fallback = `https://affiliate.${root}`;
+  const host = (req.get('host') || '').trim();
+  if (!host) return fallback;
+  const hostname = host.split(':')[0].toLowerCase();
+  if (hostname === root || hostname.endsWith(`.${root}`)) {
+    const proto = config.env === 'production' ? 'https' : req.protocol;
+    return `${proto}://${host}`;
+  }
+  return fallback;
+}
+
 export const publicRouter = Router();
 
 // GET /api/config
@@ -47,11 +63,14 @@ publicRouter.get('/api/config', async (_req, res, next) => {
 publicRouter.get('/clicker-affiliate.js', async (req, res, next) => {
   try {
     const s = await getSettings();
-    // The click beacon should target the host the script was actually served
-    // from (works whether that's the API's own domain or the dashboard host
-    // that proxies /api). Prefer an explicit PUBLIC_API_BASE, else derive it.
-    const apiBase =
-      config.publicApiBase || `${req.protocol}://${req.get('host')}`;
+    // The click beacon target. This response is cacheable, so it must NOT depend
+    // on an attacker-controllable Host header (cache-poisoning → beacon redirect
+    // + ref/URL exfiltration). Prefer an explicit PUBLIC_API_BASE; otherwise use
+    // the request Host ONLY if it is within ROOT_DOMAIN; else fall back to a
+    // safe configured default.
+    const apiBase = config.publicApiBase || safeApiBase(req);
+    // Cache separately per host so a poisoned entry can't be served for another.
+    res.set('Vary', 'Host');
     // Prepend admin-controlled defaults (a site's own window.CLICKER_AFFILIATE
     // override, set before this script, still wins because we only fill blanks).
     const preamble =

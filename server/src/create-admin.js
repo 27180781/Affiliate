@@ -33,22 +33,31 @@ async function run() {
 
   const hash = await bcrypt.hash(password, 10);
 
-  // Upsert by email: create the admin, or reset an existing account to admin
-  // with the supplied password. If the desired ref_code is taken by a DIFFERENT
-  // account, fall back to a unique variant so provisioning still succeeds.
+  // By default, create the admin only if it does not already exist, so routine
+  // restarts/redeploys do NOT reset an existing admin's password. Set
+  // ADMIN_FORCE_RESET=true to intentionally (re)set the password/role.
+  const forceReset = String(process.env.ADMIN_FORCE_RESET ?? 'false').toLowerCase() === 'true';
+  const onConflict = forceReset
+    ? `ON CONFLICT (email)
+         DO UPDATE SET password_hash = EXCLUDED.password_hash,
+                       name          = EXCLUDED.name,
+                       role          = 'admin'`
+    : 'ON CONFLICT (email) DO NOTHING';
+
+  // If the desired ref_code is taken by a DIFFERENT account, fall back to a
+  // unique variant so provisioning still succeeds.
   let code = refCode;
   for (let attempt = 0; attempt < 6; attempt++) {
     try {
       await pool.query(
         `INSERT INTO affiliates (name, email, password_hash, custom_ref_code, role)
          VALUES ($1, $2, $3, $4, 'admin')
-         ON CONFLICT (email)
-           DO UPDATE SET password_hash = EXCLUDED.password_hash,
-                         name          = EXCLUDED.name,
-                         role          = 'admin'`,
+         ${onConflict}`,
         [name, email, hash, code]
       );
-      console.log(`[create-admin] admin ready: ${email}`);
+      console.log(
+        forceReset ? `[create-admin] admin reset: ${email}` : `[create-admin] admin ready (created if absent): ${email}`
+      );
       await pool.end();
       return;
     } catch (err) {

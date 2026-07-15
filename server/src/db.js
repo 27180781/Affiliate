@@ -8,10 +8,21 @@ const { Pool } = pg;
 // JSON we return to clients is numeric. (pg type OID 1700 = NUMERIC.)
 pg.types.setTypeParser(1700, (val) => (val === null ? null : parseFloat(val)));
 
+// TLS config for the DB connection. When enabled, verify the server certificate
+// by default (optionally against PGSSL_CA); only skip verification when an
+// operator explicitly sets PGSSL_NO_VERIFY=true.
+function sslConfig() {
+  if (!config.pgSsl) return false;
+  if (config.pgSslNoVerify) return { rejectUnauthorized: false };
+  return config.pgSslCa
+    ? { rejectUnauthorized: true, ca: config.pgSslCa }
+    : { rejectUnauthorized: true };
+}
+
 export const pool = new Pool(
   config.databaseUrl
-    ? { connectionString: config.databaseUrl, ssl: config.pgSsl ? { rejectUnauthorized: false } : false }
-    : { ...config.pg, ssl: config.pgSsl ? { rejectUnauthorized: false } : false }
+    ? { connectionString: config.databaseUrl, ssl: sslConfig() }
+    : { ...config.pg, ssl: sslConfig() }
 );
 
 pool.on('error', (err) => {
