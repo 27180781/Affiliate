@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api.js';
 import Layout from '../components/Layout.jsx';
 import KpiCard from '../components/KpiCard.jsx';
@@ -12,20 +12,26 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [payingId, setPayingId] = useState(null);
+  // Monotonic request id: ignore responses from superseded loads (e.g. rapid
+  // status-filter changes) so we never render data for the wrong filter.
+  const reqIdRef = useRef(0);
 
   const load = useCallback(async () => {
+    const myReq = ++reqIdRef.current;
     setError('');
     try {
       const [affRes, convRes] = await Promise.all([
         api.adminAffiliates(),
         api.adminConversions(statusFilter),
       ]);
+      if (myReq !== reqIdRef.current) return; // a newer load started; drop this
       setAffiliates(affRes.affiliates);
       setConversions(convRes.conversions);
     } catch (err) {
+      if (myReq !== reqIdRef.current) return;
       setError(err.message || 'שגיאה בטעינת נתוני הניהול');
     } finally {
-      setLoading(false);
+      if (myReq === reqIdRef.current) setLoading(false);
     }
   }, [statusFilter]);
 

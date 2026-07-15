@@ -22,11 +22,11 @@ function round2(n) {
 }
 
 function clientIpHash(req) {
-  const fwd = (req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
-  const ip = fwd || req.socket?.remoteAddress || '';
+  // req.ip is proxy-aware via `trust proxy`; don't hand-parse XFF (spoofable).
+  const ip = req.ip || req.socket?.remoteAddress || '';
   if (!ip) return null;
   // Store only a salted hash — never the raw IP.
-  return createHash('sha256').update(`${config.jwtSecret}:${ip}`).digest('hex').slice(0, 32);
+  return createHash('sha256').update(`${config.ipHashSalt}:${ip}`).digest('hex').slice(0, 32);
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,10 @@ trackRouter.post('/track-conversion', async (req, res, next) => {
       return res.status(200).json({ matched: false, reason: 'unknown_ref' });
     }
 
-    const commission = round2(amount * config.commissionRate);
+    // Round the purchase first, then derive commission from the stored value so
+    // commission_amount and purchase_amount never disagree for >2-decimal inputs.
+    const purchase = round2(amount);
+    const commission = round2(purchase * config.commissionRate);
 
     // Idempotency: order_id is UNIQUE. If it already exists, return it as-is.
     const existing = await query(
@@ -88,7 +91,7 @@ trackRouter.post('/track-conversion', async (req, res, next) => {
          VALUES ($1, $2, $3, $4, 'pending')
          ON CONFLICT (order_id) DO NOTHING
          RETURNING id, affiliate_id, order_id, purchase_amount, commission_amount, status, created_at`,
-        [affiliate.id, orderId, round2(amount), commission]
+        [affiliate.id, orderId, purchase, commission]
       );
 
       // Lost an idempotency race (row inserted concurrently) → fetch & return.

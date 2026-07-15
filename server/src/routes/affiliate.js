@@ -56,7 +56,7 @@ affiliateRouter.get('/stats', async (req, res, next) => {
 // GET /api/affiliate/conversions?limit=&offset= → recent referred conversions
 affiliateRouter.get('/conversions', async (req, res, next) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit ?? '50', 10) || 50, 200);
+    const limit = Math.min(Math.max(parseInt(req.query.limit ?? '50', 10) || 50, 1), 200);
     const offset = Math.max(parseInt(req.query.offset ?? '0', 10) || 0, 0);
     const { rows } = await query(
       `SELECT id, order_id, purchase_amount, commission_amount, status, created_at

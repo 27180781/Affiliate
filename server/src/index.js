@@ -11,41 +11,52 @@ import { trackRouter } from './routes/track.js';
 
 const app = express();
 
-// Behind CapRover's nginx/HAProxy → trust the proxy for correct client IPs
-// and secure-cookie handling.
-app.set('trust proxy', 1);
+// Behind CapRover's edge nginx (and, for the dashboard, the client image's own
+// nginx /api proxy) → trust the configured number of proxy hops so req.ip and
+// the rate limiters key on the real client, not a constant proxy address.
+app.set('trust proxy', config.trustProxy);
 
 app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 
 // --- CORS ------------------------------------------------------------------
-// Allow the affiliate dashboard origin plus any *.clicker.co.il subdomain
-// (the tracking script's /api/track-click calls come from those subdomains).
+// Two policies:
+//  1. Strict app CORS — only the explicit dashboard origin(s) in CORS_ORIGINS.
+//     (The dashboard normally calls /api same-origin via nginx, so this only
+//      matters for split hosting.)
+//  2. Wide, NON-credentialed CORS for the public /api/track-click beacon, which
+//     is fired by the tracking script from any *.clicker.co.il subdomain.
+// Auth uses a Bearer header (not cookies), so credentials are never needed.
 const rootDomain = config.rootDomain;
-function isAllowedOrigin(origin) {
-  if (!origin) return true; // server-to-server / curl (e.g. the webhook)
-  if (config.corsOrigins.includes(origin)) return true;
+
+function strictOrigin(origin, cb) {
+  // No Origin header = server-to-server (curl, the webhook) → allow.
+  if (!origin || config.corsOrigins.includes(origin)) return cb(null, true);
+  return cb(new Error('Not allowed by CORS'));
+}
+
+function subdomainOrigin(origin, cb) {
+  if (!origin) return cb(null, true);
   try {
     const { hostname, protocol } = new URL(origin);
-    if (protocol !== 'https:' && config.env === 'production') return false;
-    return hostname === rootDomain || hostname.endsWith(`.${rootDomain}`);
+    if (protocol !== 'https:' && config.env === 'production') return cb(new Error('Not allowed by CORS'));
+    if (hostname === rootDomain || hostname.endsWith(`.${rootDomain}`)) return cb(null, true);
   } catch {
-    return false;
+    /* fall through */
   }
+  return cb(new Error('Not allowed by CORS'));
 }
-app.use(
-  cors({
-    origin(origin, cb) {
-      return isAllowedOrigin(origin) ? cb(null, true) : cb(new Error('Not allowed by CORS'));
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'OPTIONS'],
-  })
-);
+
+const appCors = cors({ origin: strictOrigin, methods: ['GET', 'POST', 'OPTIONS'] });
+const clickCors = cors({ origin: subdomainOrigin, methods: ['POST', 'OPTIONS'] });
 
 // --- Rate limiting ---------------------------------------------------------
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 50, standardHeaders: true, legacyHeaders: false });
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false });
+// The webhook is authenticated by a shared secret and driven by the payment
+// gateway, which may legitimately burst → give it a generous, separate budget.
+const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 2000, standardHeaders: true, legacyHeaders: false });
+const clickLimiter = rateLimit({ windowMs: 60 * 1000, max: 600, standardHeaders: true, legacyHeaders: false });
 
 // --- Health check (used by CapRover / uptime probes) -----------------------
 app.get('/api/health', async (_req, res) => {
@@ -58,13 +69,20 @@ app.get('/api/health', async (_req, res) => {
 });
 
 // --- Routes ----------------------------------------------------------------
-app.use('/api/auth', authLimiter, authRouter);
-app.use('/api/affiliate', apiLimiter, affiliateRouter);
-app.use('/api/admin', apiLimiter, adminRouter);
-app.use('/api', apiLimiter, trackRouter); // /api/track-conversion, /api/track-click
+app.use('/api/auth', appCors, authLimiter, authRouter);
+app.use('/api/affiliate', appCors, apiLimiter, affiliateRouter);
+app.use('/api/admin', appCors, apiLimiter, adminRouter);
+
+// Tracking: apply per-path CORS + rate limiting as middleware, then let the
+// single trackRouter (mounted at /api) handle the routes. The webhook is
+// server-to-server (strict CORS, generous limiter); the click beacon is a
+// public browser call from any *.clicker.co.il subdomain (wide CORS, own limiter).
+app.use('/api/track-conversion', appCors, webhookLimiter);
+app.use('/api/track-click', clickCors, clickLimiter);
+app.use('/api', trackRouter); // /api/track-conversion, /api/track-click
 
 // 404 for unmatched API routes
-app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
+app.use('/api', appCors, (_req, res) => res.status(404).json({ error: 'Not found' }));
 
 // --- Central error handler -------------------------------------------------
 // eslint-disable-next-line no-unused-vars

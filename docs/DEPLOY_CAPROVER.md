@@ -28,6 +28,8 @@
    COMMISSION_RATE=0.20
    ROOT_DOMAIN=clicker.co.il
    CORS_ORIGINS=https://affiliate.clicker.co.il
+   # Edge nginx + the dashboard's client nginx /api proxy = 2 proxy hops.
+   TRUST_PROXY=2
    ```
 3. *App Configs* → **Container HTTP Port** = `4000`.
 4. **Deploy** → לשונית *Deployment*:

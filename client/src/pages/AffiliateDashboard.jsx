@@ -52,7 +52,7 @@ export default function AffiliateDashboard() {
 
       {loading ? (
         <div className="card text-center text-sm text-slate-500">טוען…</div>
-      ) : (
+      ) : error ? null : (
         <div className="space-y-6">
           {me && <ReferralWidget link={me.referralLink} refCode={me.affiliate.custom_ref_code} />}
 

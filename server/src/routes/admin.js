@@ -38,7 +38,7 @@ adminRouter.get('/affiliates', async (_req, res, next) => {
 // GET /api/admin/conversions?status=&limit=&offset= → central conversion list
 adminRouter.get('/conversions', async (req, res, next) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit ?? '100', 10) || 100, 500);
+    const limit = Math.min(Math.max(parseInt(req.query.limit ?? '100', 10) || 100, 1), 500);
     const offset = Math.max(parseInt(req.query.offset ?? '0', 10) || 0, 0);
     const status = req.query.status;
 
@@ -108,6 +108,9 @@ adminRouter.post('/affiliates/:id/pay-all', async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await withTransaction(async (client) => {
+      // Lock the affiliate row first so a concurrent /track-conversion credit
+      // committed during this transaction is preserved rather than overwritten.
+      await client.query('SELECT 1 FROM affiliates WHERE id = $1 FOR UPDATE', [id]);
       const { rows } = await client.query(
         `UPDATE conversions SET status = 'paid'
           WHERE affiliate_id = $1 AND status IN ('pending','approved')
@@ -115,7 +118,17 @@ adminRouter.post('/affiliates/:id/pay-all', async (req, res, next) => {
         [id]
       );
       const paidCount = rows.length;
-      await client.query('UPDATE affiliates SET pending_balance = 0 WHERE id = $1', [id]);
+      // Recompute the denormalised balance from the source-of-truth table
+      // instead of an absolute "= 0" (which could clobber a concurrent credit).
+      await client.query(
+        `UPDATE affiliates
+            SET pending_balance = COALESCE((
+                  SELECT SUM(commission_amount) FROM conversions
+                   WHERE affiliate_id = $1 AND status IN ('pending','approved')
+                ), 0)
+          WHERE id = $1`,
+        [id]
+      );
       return { paidCount };
     });
     res.json(result);

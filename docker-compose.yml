@@ -39,8 +39,9 @@ services:
       # (the CapRover Dockerfile runs migrate WITHOUT seeding/admin creation).
       ADMIN_EMAIL: admin@clicker.co.il
       ADMIN_PASSWORD: admin1234
-    # Migrate + seed demo affiliate + create the dev admin, then start the API.
-    command: sh -c "node src/migrate.js --seed && node src/create-admin.js && node src/index.js"
+    # Migrate + seed demo affiliate + create the dev admin, then exec the API
+    # (so it becomes PID 1 and gets SIGTERM for graceful shutdown).
+    command: sh -c "node src/migrate.js --seed && node src/create-admin.js && exec node src/index.js"
     depends_on:
       db:
         condition: service_healthy

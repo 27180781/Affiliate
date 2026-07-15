@@ -51,6 +51,14 @@ export const config = {
   // Commission rate applied to purchase_amount (0.20 = 20%).
   commissionRate: parseFloat(process.env.COMMISSION_RATE ?? '0.20'),
 
+  // Dedicated salt for hashing client IPs in the clicks table (never the raw IP,
+  // never reuse the JWT secret). Falls back to a static salt if unset.
+  ipHashSalt: process.env.IP_HASH_SALT ?? process.env.JWT_SECRET ?? 'clicker-ip-hash-salt',
+
+  // Number of reverse proxies in front of the API (Express `trust proxy`).
+  // Local/compose: 1. CapRover edge + client nginx /api proxy: 2.
+  trustProxy: parseInt(process.env.TRUST_PROXY ?? '1', 10),
+
   // Root domain used to build referral links shown in the dashboard.
   rootDomain: process.env.ROOT_DOMAIN ?? 'clicker.co.il',
 
