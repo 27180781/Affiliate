@@ -16,6 +16,10 @@ const dateFmt = new Intl.DateTimeFormat('he-IL', {
 export const money = (n) => currency.format(Number(n ?? 0));
 export const dateTime = (d) => (d ? dateFmt.format(new Date(d)) : '');
 
+// Rate (0..1) → percent string, e.g. 0.2 → "20%".
+export const percent = (rate) =>
+  rate == null || rate === '' ? '' : `${Number((Number(rate) * 100).toFixed(2))}%`;
+
 export const STATUS_LABELS = {
   pending: 'ממתין',
   approved: 'אושר',

@@ -2,21 +2,29 @@
 import { Router } from 'express';
 import { query, withTransaction } from '../db.js';
 import { requireAuth, requireAdmin } from '../auth.js';
+import { getSettings, updateSettings } from '../settings.js';
+import { recordConversion } from '../conversions.js';
 
 export const adminRouter = Router();
 
 adminRouter.use(requireAuth, requireAdmin);
 
-// GET /api/admin/affiliates → every affiliate with live balances
+// GET /api/admin/affiliates → every affiliate with live balances + rate + clicks
 adminRouter.get('/affiliates', async (_req, res, next) => {
   try {
     const { rows } = await query(
       `SELECT a.id, a.name, a.email, a.custom_ref_code, a.role, a.created_at,
+              a.commission_rate,
               COALESCE(c.total_conversions, 0)                                   AS total_conversions,
               COALESCE(c.total_earnings, 0)                                      AS total_earnings,
               COALESCE(c.pending_balance, 0)                                     AS pending_balance,
-              COALESCE(c.total_paid, 0)                                          AS total_paid
+              COALESCE(c.total_paid, 0)                                          AS total_paid,
+              COALESCE(k.total_clicks, 0)                                        AS total_clicks
          FROM affiliates a
+         LEFT JOIN (
+              SELECT affiliate_id, COUNT(*)::int AS total_clicks
+                FROM clicks GROUP BY affiliate_id
+         ) k ON k.affiliate_id = a.id
          LEFT JOIN (
               SELECT affiliate_id,
                      COUNT(*)::int                                                       AS total_conversions,
@@ -132,6 +140,128 @@ adminRouter.post('/affiliates/:id/pay-all', async (req, res, next) => {
       return { paidCount };
     });
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Global settings (default commission rate + cookie retention days)
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/settings
+adminRouter.get('/settings', async (_req, res, next) => {
+  try {
+    const s = await getSettings({ fresh: true });
+    res.json({ settings: s });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/settings  { default_commission_rate?, cookie_days? }
+adminRouter.put('/settings', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    let rate;
+    let days;
+
+    if (body.default_commission_rate !== undefined) {
+      rate = Number(body.default_commission_rate);
+      if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+        return res.status(400).json({ error: 'default_commission_rate must be between 0 and 1' });
+      }
+    }
+    if (body.cookie_days !== undefined) {
+      days = parseInt(body.cookie_days, 10);
+      if (!Number.isInteger(days) || days < 1 || days > 730) {
+        return res.status(400).json({ error: 'cookie_days must be an integer between 1 and 730' });
+      }
+    }
+
+    const s = await updateSettings({ defaultCommissionRate: rate, cookieDays: days });
+    res.json({ settings: s });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Per-affiliate commission rate
+// ---------------------------------------------------------------------------
+
+// PATCH /api/admin/affiliates/:id  { commission_rate: number|null, name?: string }
+adminRouter.patch('/affiliates/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const body = req.body ?? {};
+    const sets = [];
+    const params = [];
+
+    if ('commission_rate' in body) {
+      const raw = body.commission_rate;
+      if (raw === null || raw === '') {
+        params.push(null);
+        sets.push(`commission_rate = $${params.length}`); // null → use global default
+      } else {
+        const rate = Number(raw);
+        if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+          return res.status(400).json({ error: 'commission_rate must be between 0 and 1, or null' });
+        }
+        params.push(rate);
+        sets.push(`commission_rate = $${params.length}`);
+      }
+    }
+    if (typeof body.name === 'string' && body.name.trim()) {
+      params.push(body.name.trim());
+      sets.push(`name = $${params.length}`);
+    }
+
+    if (sets.length === 0) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+
+    params.push(id);
+    const { rows } = await query(
+      `UPDATE affiliates SET ${sets.join(', ')}
+        WHERE id = $${params.length} AND role = 'affiliate'
+        RETURNING id, name, email, custom_ref_code, commission_rate`,
+      params
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Affiliate not found' });
+    res.json({ affiliate: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Manual conversion entry (when there is no automated payment webhook yet)
+// ---------------------------------------------------------------------------
+
+// POST /api/admin/conversions  { affiliate_id? , ref? , order_id, purchase_amount }
+adminRouter.post('/conversions', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const orderId = body.order_id != null ? String(body.order_id).trim() : '';
+    const amount = Number(body.purchase_amount);
+    const ref = body.ref ? String(body.ref).trim().toUpperCase() : undefined;
+    const affiliateId = body.affiliate_id ? String(body.affiliate_id) : undefined;
+
+    if (!orderId) return res.status(400).json({ error: 'order_id is required' });
+    if (!Number.isFinite(amount) || amount < 0) {
+      return res.status(400).json({ error: 'purchase_amount must be a non-negative number' });
+    }
+    if (!ref && !affiliateId) {
+      return res.status(400).json({ error: 'affiliate_id or ref is required' });
+    }
+
+    const result = await recordConversion({ ref, affiliateId, orderId, amount });
+    if (!result.matched) return res.status(404).json({ error: 'Affiliate not found' });
+    return res.status(result.duplicate ? 200 : 201).json({
+      duplicate: result.duplicate,
+      conversion: result.conversion,
+    });
   } catch (err) {
     next(err);
   }

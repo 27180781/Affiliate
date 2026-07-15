@@ -3,8 +3,9 @@
 //   POST /api/track-click        (optional, called by the browser tracking script)
 import { Router } from 'express';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { query, withTransaction } from '../db.js';
+import { query } from '../db.js';
 import { config } from '../config.js';
+import { recordConversion } from '../conversions.js';
 
 export const trackRouter = Router();
 
@@ -14,11 +15,6 @@ function safeEqual(a, b) {
   const bufB = Buffer.from(String(b));
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
-}
-
-/** Round to 2 decimals using integer cents to avoid float drift. */
-function round2(n) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
 function clientIpHash(req) {
@@ -60,65 +56,17 @@ trackRouter.post('/track-conversion', async (req, res, next) => {
       return res.status(200).json({ matched: false, reason: 'no_ref' });
     }
 
-    // Resolve the referral code to an affiliate.
-    const { rows: affRows } = await query(
-      'SELECT id FROM affiliates WHERE custom_ref_code = $1 AND role = $2',
-      [ref, 'affiliate']
-    );
-    const affiliate = affRows[0];
-    if (!affiliate) {
+    // Record via the shared helper (resolves affiliate, applies the effective
+    // per-affiliate/global commission rate, idempotent on order_id).
+    const result = await recordConversion({ ref, orderId, amount });
+    if (!result.matched) {
       // Unknown / stale cookie. Not an error the payment gateway should retry.
-      return res.status(200).json({ matched: false, reason: 'unknown_ref' });
+      return res.status(200).json({ matched: false, reason: result.reason });
     }
-
-    // Round the purchase first, then derive commission from the stored value so
-    // commission_amount and purchase_amount never disagree for >2-decimal inputs.
-    const purchase = round2(amount);
-    const commission = round2(purchase * config.commissionRate);
-
-    // Idempotency: order_id is UNIQUE. If it already exists, return it as-is.
-    const existing = await query(
-      'SELECT id, affiliate_id, order_id, purchase_amount, commission_amount, status FROM conversions WHERE order_id = $1',
-      [orderId]
-    );
-    if (existing.rows[0]) {
-      return res.status(200).json({ matched: true, duplicate: true, conversion: existing.rows[0] });
-    }
-
-    const conversion = await withTransaction(async (client) => {
-      const insert = await client.query(
-        `INSERT INTO conversions (affiliate_id, order_id, purchase_amount, commission_amount, status)
-         VALUES ($1, $2, $3, $4, 'pending')
-         ON CONFLICT (order_id) DO NOTHING
-         RETURNING id, affiliate_id, order_id, purchase_amount, commission_amount, status, created_at`,
-        [affiliate.id, orderId, purchase, commission]
-      );
-
-      // Lost an idempotency race (row inserted concurrently) → fetch & return.
-      if (insert.rows.length === 0) {
-        const again = await client.query(
-          'SELECT id, affiliate_id, order_id, purchase_amount, commission_amount, status, created_at FROM conversions WHERE order_id = $1',
-          [orderId]
-        );
-        return { row: again.rows[0], created: false };
-      }
-
-      // Keep the denormalised aggregate caches in step.
-      await client.query(
-        `UPDATE affiliates
-            SET total_earnings  = total_earnings  + $1,
-                pending_balance = pending_balance + $1
-          WHERE id = $2`,
-        [commission, affiliate.id]
-      );
-
-      return { row: insert.rows[0], created: true };
-    });
-
-    return res.status(conversion.created ? 201 : 200).json({
+    return res.status(result.duplicate ? 200 : 201).json({
       matched: true,
-      duplicate: !conversion.created,
-      conversion: conversion.row,
+      duplicate: result.duplicate,
+      conversion: result.conversion,
     });
   } catch (err) {
     next(err);

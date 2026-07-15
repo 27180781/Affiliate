@@ -19,6 +19,11 @@ COPY server/src ./src
 COPY db /app/db
 ENV DB_DIR=/app/db
 
+# Bake the tracking script template in so /clicker-affiliate.js can serve it
+# dynamically (with admin-controlled cookie-retention days).
+COPY tracking /app/tracking
+ENV TRACKING_DIR=/app/tracking
+
 EXPOSE 4000
 
 # Run migrations, then exec the API so it becomes PID 1 and receives SIGTERM

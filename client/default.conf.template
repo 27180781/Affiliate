@@ -7,13 +7,19 @@ server {
     root   /usr/share/nginx/html;
     index  index.html;
 
-    # Long cache for hashed assets; the tracking script stays fresh-ish.
+    # Long cache for hashed assets.
     location /assets/ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
+
+    # The tracking script is served dynamically by the API (so admins can change
+    # cookie-retention days centrally). Proxy it to the API upstream.
     location = /clicker-affiliate.js {
-        add_header Cache-Control "public, max-age=3600";
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $api_upstream ${API_UPSTREAM};
+        proxy_pass http://$api_upstream/clicker-affiliate.js;
+        proxy_set_header Host $host;
     }
 
     # Same-origin API proxy → the Express service. Keeps the dashboard free of

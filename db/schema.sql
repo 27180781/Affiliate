@@ -28,11 +28,36 @@ CREATE TABLE IF NOT EXISTS affiliates (
     custom_ref_code TEXT            UNIQUE NOT NULL,
     role            TEXT            NOT NULL DEFAULT 'affiliate'
                                     CHECK (role IN ('affiliate', 'admin')),
+    -- Per-affiliate commission rate override (e.g. 0.25 = 25%).
+    -- NULL means "use the global default in settings.default_commission_rate".
+    commission_rate NUMERIC(5, 4)   CHECK (commission_rate IS NULL OR (commission_rate >= 0 AND commission_rate <= 1)),
     -- Denormalised aggregate caches (source of truth is the conversions table).
     total_earnings  NUMERIC(12, 2)  NOT NULL DEFAULT 0,   -- lifetime commissions, any status
     pending_balance NUMERIC(12, 2)  NOT NULL DEFAULT 0,   -- commissions not yet paid out
     created_at      TIMESTAMPTZ     NOT NULL DEFAULT now()
 );
+
+-- Additive migration for pre-existing databases (CREATE TABLE above is a no-op
+-- when the table already exists, so add the newer column idempotently).
+ALTER TABLE affiliates
+    ADD COLUMN IF NOT EXISTS commission_rate NUMERIC(5, 4)
+    CHECK (commission_rate IS NULL OR (commission_rate >= 0 AND commission_rate <= 1));
+
+-- ---------------------------------------------------------------------------
+--  settings (single-row global configuration, editable by admins)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS settings (
+    id                      INT           PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    -- Default commission rate when an affiliate has no per-affiliate override.
+    default_commission_rate NUMERIC(5, 4) NOT NULL DEFAULT 0.20
+                                          CHECK (default_commission_rate >= 0 AND default_commission_rate <= 1),
+    -- How long the clicker_affiliate cookie lives, in days.
+    cookie_days             INT           NOT NULL DEFAULT 30 CHECK (cookie_days >= 1 AND cookie_days <= 730),
+    updated_at              TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+
+-- Ensure the single settings row always exists.
+INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 --  conversions

@@ -3,11 +3,15 @@ import { api } from '../api.js';
 import Layout from '../components/Layout.jsx';
 import KpiCard from '../components/KpiCard.jsx';
 import ConversionsTable from '../components/ConversionsTable.jsx';
+import SettingsPanel from '../components/SettingsPanel.jsx';
+import AddConversionForm from '../components/AddConversionForm.jsx';
+import RateEditor from '../components/RateEditor.jsx';
 import { money } from '../format.js';
 
 export default function AdminDashboard() {
   const [affiliates, setAffiliates] = useState([]);
   const [conversions, setConversions] = useState([]);
+  const [settings, setSettings] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -20,13 +24,15 @@ export default function AdminDashboard() {
     const myReq = ++reqIdRef.current;
     setError('');
     try {
-      const [affRes, convRes] = await Promise.all([
+      const [affRes, convRes, setRes] = await Promise.all([
         api.adminAffiliates(),
         api.adminConversions(statusFilter),
+        api.adminSettings(),
       ]);
       if (myReq !== reqIdRef.current) return; // a newer load started; drop this
       setAffiliates(affRes.affiliates);
       setConversions(convRes.conversions);
+      setSettings(setRes.settings);
     } catch (err) {
       if (myReq !== reqIdRef.current) return;
       setError(err.message || 'שגיאה בטעינת נתוני הניהול');
@@ -63,6 +69,7 @@ export default function AdminDashboard() {
 
   const totalPending = affiliates.reduce((s, a) => s + Number(a.pending_balance || 0), 0);
   const totalPaid = affiliates.reduce((s, a) => s + Number(a.total_paid || 0), 0);
+  const totalClicks = affiliates.reduce((s, a) => s + Number(a.total_clicks || 0), 0);
 
   return (
     <Layout>
@@ -75,13 +82,20 @@ export default function AdminDashboard() {
 
       {loading ? (
         <div className="card text-center text-sm text-slate-500">טוען…</div>
-      ) : (
+      ) : error ? null : (
         <div className="space-y-8">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
             <KpiCard label="שותפים פעילים" value={affiliates.length} accent="brand" />
+            <KpiCard label="סך קליקים" value={totalClicks} accent="slate" />
             <KpiCard label="סך יתרה ממתינה" value={money(totalPending)} accent="amber" />
             <KpiCard label="סך ששולם (מצטבר)" value={money(totalPaid)} accent="emerald" />
           </div>
+
+          {/* Settings */}
+          {settings && <SettingsPanel settings={settings} onSaved={(s) => setSettings(s)} />}
+
+          {/* Manual conversion entry */}
+          <AddConversionForm affiliates={affiliates} onAdded={load} />
 
           {/* Affiliates table */}
           <section>
@@ -93,6 +107,8 @@ export default function AdminDashboard() {
                     <th className="px-4 py-3">שם</th>
                     <th className="px-4 py-3">אימייל</th>
                     <th className="px-4 py-3">קוד</th>
+                    <th className="px-4 py-3">אחוז עמלה</th>
+                    <th className="px-4 py-3">קליקים</th>
                     <th className="px-4 py-3">המרות</th>
                     <th className="px-4 py-3">יתרה ממתינה</th>
                     <th className="px-4 py-3">שולם</th>
@@ -105,6 +121,14 @@ export default function AdminDashboard() {
                       <td className="px-4 py-3 font-medium text-slate-800">{a.name}</td>
                       <td className="px-4 py-3 text-slate-500" dir="ltr">{a.email}</td>
                       <td className="px-4 py-3 font-mono text-xs" dir="ltr">{a.custom_ref_code}</td>
+                      <td className="px-4 py-3">
+                        <RateEditor
+                          affiliate={a}
+                          defaultRate={settings?.defaultCommissionRate}
+                          onSaved={load}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{a.total_clicks}</td>
                       <td className="px-4 py-3">{a.total_conversions}</td>
                       <td className="px-4 py-3 font-medium text-amber-700">{money(a.pending_balance)}</td>
                       <td className="px-4 py-3 text-emerald-700">{money(a.total_paid)}</td>

@@ -8,6 +8,7 @@ import { authRouter } from './routes/auth.js';
 import { affiliateRouter } from './routes/affiliate.js';
 import { adminRouter } from './routes/admin.js';
 import { trackRouter } from './routes/track.js';
+import { publicRouter } from './routes/public.js';
 
 const app = express();
 
@@ -47,8 +48,10 @@ function subdomainOrigin(origin, cb) {
   return cb(new Error('Not allowed by CORS'));
 }
 
-const appCors = cors({ origin: strictOrigin, methods: ['GET', 'POST', 'OPTIONS'] });
+const appCors = cors({ origin: strictOrigin, methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'] });
 const clickCors = cors({ origin: subdomainOrigin, methods: ['POST', 'OPTIONS'] });
+// Public, cacheable endpoints (tracking script + config) — readable from anywhere.
+const publicCors = cors({ origin: subdomainOrigin, methods: ['GET', 'OPTIONS'] });
 
 // --- Rate limiting ---------------------------------------------------------
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 50, standardHeaders: true, legacyHeaders: false });
@@ -69,6 +72,9 @@ app.get('/api/health', async (_req, res) => {
 });
 
 // --- Routes ----------------------------------------------------------------
+// Public config + dynamic tracking script (cacheable; wide CORS, no limiter).
+app.use(publicCors, publicRouter); // GET /api/config, GET /clicker-affiliate.js
+
 app.use('/api/auth', appCors, authLimiter, authRouter);
 app.use('/api/affiliate', appCors, apiLimiter, affiliateRouter);
 app.use('/api/admin', appCors, apiLimiter, adminRouter);

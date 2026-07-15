@@ -118,10 +118,13 @@ cd client && npm install && npm run dev   # דשבורד על :5173 (proxy ל-:4
 הסקריפט:
 1. קורא `?ref=CODE` מכתובת ה-URL.
 2. אם קיים — כותב Cookie בשם `clicker_affiliate` על `domain=.clicker.co.il`
-   עם `Secure; SameSite=Lax; Max-Age=30 ימים; Path=/`.
+   עם `Secure; SameSite=Lax; Path=/`, ותוקף לפי **מספר הימים שמוגדר בלוח המנהל** (ברירת מחדל 30).
 3. (אופציונלי) שולח beacon ל-`/api/track-click` לצורך ספירת קליקים.
 
-קונפיגורציה אופציונלית (לפני טעינת הסקריפט): ראו את ההערות בראש
+> הסקריפט מוגש **דינמית** מ-`/clicker-affiliate.js` (דרך ה-API), כך שכשמשנים את
+> "ימי שמירת עוגייה" בהגדרות המנהל — הערך מתעדכן בכל האתרים אוטומטית, בלי לערוך מחדש את ההטמעה.
+
+קונפיגורציה אופציונלית (site override, לפני טעינת הסקריפט): ראו את ההערות בראש
 [`tracking/clicker-affiliate.js`](tracking/clicker-affiliate.js).
 
 ---
@@ -175,10 +178,16 @@ x-webhook-secret: <WEBHOOK_SECRET>
 | GET  | `/api/affiliate/conversions` | שותף | ההמרות של השותף |
 | POST | `/api/track-conversion` | webhook secret | קליטת המרה מחיוב |
 | POST | `/api/track-click` | — | ספירת קליק (מהסקריפט) |
-| GET  | `/api/admin/affiliates` | מנהל | כל השותפים + יתרות |
+| GET  | `/api/config` | — | קונפיג ציבורי (שם עוגייה, ימי תוקף) |
+| GET  | `/clicker-affiliate.js` | — | סקריפט המעקב (דינמי, עם ימי העוגייה מההגדרות) |
+| GET  | `/api/admin/affiliates` | מנהל | כל השותפים + יתרות + קליקים + אחוז |
 | GET  | `/api/admin/conversions` | מנהל | כל ההמרות (סינון לפי סטטוס) |
+| POST | `/api/admin/conversions` | מנהל | **הזנת רכישה ידנית** |
 | POST | `/api/admin/conversions/:id/pay` | מנהל | סימון המרה כ"שולם" |
 | POST | `/api/admin/affiliates/:id/pay-all` | מנהל | סימון כל היתרה כ"שולם" |
+| PATCH | `/api/admin/affiliates/:id` | מנהל | עדכון **אחוז עמלה פר-שותף** / שם |
+| GET  | `/api/admin/settings` | מנהל | הגדרות (אחוז ברירת מחדל, ימי עוגייה) |
+| PUT  | `/api/admin/settings` | מנהל | עדכון ההגדרות |
 
 ## אבטחה — עקרונות מיושמים
 - סיסמאות ב-**bcrypt**; JWT חתום; השוואת סוד ה-Webhook ב-**constant-time**.

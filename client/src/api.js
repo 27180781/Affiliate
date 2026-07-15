@@ -59,4 +59,11 @@ export const api = {
     apiFetch(`/api/admin/conversions${status ? `?status=${encodeURIComponent(status)}` : ''}`),
   adminPayConversion: (id) => apiFetch(`/api/admin/conversions/${id}/pay`, { method: 'POST' }),
   adminPayAll: (affiliateId) => apiFetch(`/api/admin/affiliates/${affiliateId}/pay-all`, { method: 'POST' }),
+
+  adminSettings: () => apiFetch('/api/admin/settings'),
+  adminUpdateSettings: (payload) => apiFetch('/api/admin/settings', { method: 'PUT', body: payload }),
+  adminUpdateAffiliate: (id, payload) =>
+    apiFetch(`/api/admin/affiliates/${id}`, { method: 'PATCH', body: payload }),
+  adminAddConversion: (payload) =>
+    apiFetch('/api/admin/conversions', { method: 'POST', body: payload }),
 };
