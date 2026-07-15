@@ -82,27 +82,18 @@
 
   function sendClickBeacon(ref) {
     if (!cfg.apiBase) return;
-    var url = cfg.apiBase.replace(/\/$/, '') + '/api/track-click';
-    var payload = {
-      ref: ref,
-      landing_url: window.location.href,
-      referrer: document.referrer || ''
-    };
+    var base = cfg.apiBase.replace(/\/$/, '');
     try {
-      var body = JSON.stringify(payload);
-      // sendBeacon is fire-and-forget and survives page navigation.
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }));
-        return;
-      }
-      // Fallback: keepalive fetch (no credentials needed for click logging).
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body,
-        keepalive: true,
-        mode: 'cors'
-      }).catch(function () {});
+      // Use an image pixel (a plain GET). Image loads are exempt from CORS and
+      // never trigger a preflight, so cross-subdomain click tracking is reliable
+      // (unlike a cross-origin JSON POST / sendBeacon, which needs a preflight).
+      var qs =
+        'ref=' + encodeURIComponent(ref) +
+        '&u=' + encodeURIComponent(window.location.href) +
+        '&r=' + encodeURIComponent(document.referrer || '') +
+        '&t=' + Date.now(); // cache-buster
+      var img = new Image();
+      img.src = base + '/api/track-click?' + qs;
     } catch (e) { /* never break the host page */ }
   }
 

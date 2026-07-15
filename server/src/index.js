@@ -53,7 +53,7 @@ function appOrigin(origin, cb) {
 }
 
 const appCors = cors({ origin: appOrigin, methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'] });
-const clickCors = cors({ origin: subdomainOrigin, methods: ['POST', 'OPTIONS'] });
+const clickCors = cors({ origin: subdomainOrigin, methods: ['GET', 'POST', 'OPTIONS'] });
 // Public, cacheable endpoints (tracking script + config) — readable from anywhere.
 const publicCors = cors({ origin: subdomainOrigin, methods: ['GET', 'OPTIONS'] });
 
@@ -77,7 +77,11 @@ app.get('/api/health', async (_req, res) => {
 
 // --- Routes ----------------------------------------------------------------
 // Public config + dynamic tracking script (cacheable; wide CORS, no limiter).
-app.use(publicCors, publicRouter); // GET /api/config, GET /clicker-affiliate.js
+// Scope publicCors to ONLY these paths — mounting it globally would make it
+// answer every cross-origin preflight (with GET-only), breaking POST beacons.
+app.use('/api/config', publicCors);
+app.use('/clicker-affiliate.js', publicCors);
+app.use(publicRouter); // GET /api/config, GET /clicker-affiliate.js
 
 app.use('/api/auth', appCors, authLimiter, authRouter);
 app.use('/api/affiliate', appCors, apiLimiter, affiliateRouter);

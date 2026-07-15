@@ -74,36 +74,58 @@ trackRouter.post('/track-conversion', async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
-//  POST /api/track-click   (optional; public, called by the browser script)
-//  Body: { ref, landing_url, referrer }
+//  Click tracking (public, called by the browser script). Two entry points:
+//    GET  /api/track-click?ref=..&u=..&r=..   → image pixel (no CORS preflight)
+//    POST /api/track-click  { ref, landing_url, referrer }
+//  Both are fire-and-forget; junk/unknown refs are silently ignored.
 // ---------------------------------------------------------------------------
+
+// 1x1 transparent GIF for the image-pixel response.
+const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+
+async function recordClick(req, data) {
+  const ref = String(data.ref ?? '').trim().toUpperCase();
+  if (!ref || !/^[A-Z0-9]{4,32}$/.test(ref)) return;
+
+  const { rows } = await query('SELECT id FROM affiliates WHERE custom_ref_code = $1', [ref]);
+  const affiliateId = rows[0]?.id ?? null;
+  if (!affiliateId) return;
+
+  await query(
+    `INSERT INTO clicks (affiliate_id, ref_code, landing_url, referrer, user_agent, ip_hash)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      affiliateId,
+      ref,
+      (data.landing_url ?? '').toString().slice(0, 2048) || null,
+      (data.referrer ?? '').toString().slice(0, 2048) || null,
+      (req.headers['user-agent'] ?? '').toString().slice(0, 512) || null,
+      clientIpHash(req),
+    ]
+  );
+}
+
+// Image-pixel beacon — a plain GET, so browsers make no CORS preflight and
+// cross-subdomain click tracking "just works".
+trackRouter.get('/track-click', async (req, res) => {
+  try {
+    await recordClick(req, {
+      ref: req.query.ref,
+      landing_url: req.query.u ?? req.query.landing_url,
+      referrer: req.query.r ?? req.query.referrer,
+    });
+  } catch {
+    /* never fail a tracking pixel */
+  }
+  res.set('Content-Type', 'image/gif');
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.end(PIXEL);
+});
+
+// JSON POST variant (kept for server-side / programmatic callers).
 trackRouter.post('/track-click', async (req, res, next) => {
   try {
-    const body = req.body ?? {};
-    const ref = String(body.ref ?? '').trim().toUpperCase();
-    if (!ref || !/^[A-Z0-9]{4,32}$/.test(ref)) {
-      return res.status(204).end(); // silently ignore junk — this is fire-and-forget
-    }
-
-    const { rows } = await query(
-      'SELECT id FROM affiliates WHERE custom_ref_code = $1',
-      [ref]
-    );
-    const affiliateId = rows[0]?.id ?? null;
-    if (!affiliateId) return res.status(204).end();
-
-    await query(
-      `INSERT INTO clicks (affiliate_id, ref_code, landing_url, referrer, user_agent, ip_hash)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        affiliateId,
-        ref,
-        (body.landing_url ?? '').toString().slice(0, 2048) || null,
-        (body.referrer ?? '').toString().slice(0, 2048) || null,
-        (req.headers['user-agent'] ?? '').toString().slice(0, 512) || null,
-        clientIpHash(req),
-      ]
-    );
+    await recordClick(req, req.body ?? {});
     return res.status(204).end();
   } catch (err) {
     next(err);
